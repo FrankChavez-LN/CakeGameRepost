@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cake Adventure 🍰</title>
+    <style>
+        body{ margin:0; background:#f3f3f3; font-family:'Segoe UI', sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; overflow: hidden; }
+        #app{ width:360px; height:640px; background:white; border-radius:25px; box-shadow:0 15px 40px rgba(0,0,0,0.1); overflow:hidden; position:relative; display:flex; flex-direction:column; }
+        #gameArea{ flex:1; position:relative; background: #000; }
+        canvas{ display:block; transition: transform 0.1s ease-out; }
+        
+        #header{ padding:10px 15px; font-size:13px; display:flex; justify-content:space-between; border-bottom:1px solid #eee; background: white; z-index: 5; }
+        .player-stats { display: flex; flex-direction: column; gap: 2px; }
+        #playerNameDisplay { font-weight: bold; color: #333; font-size: 14px; }
+        #scoreDisplay { color: #666; font-size: 12px; }
+        #totalStrawberriesDisplay { color: #e91e63; font-weight: bold; text-align: right; }
+
+        .overlay{ position:absolute; inset:0; background:rgba(255,255,255,0.95); display:flex; flex-direction:column; align-items:center; justify-content:center; font-family: 'Times New Roman', Times, serif; z-index: 10; backdrop-filter: blur(8px); }
+        
+        /* --- GAME OVER ANIMADO --- */
+        #gameOver { display: none; flex-direction: column; align-items: center; justify-content: center; }
+
+        #goTitle { 
+            font-size: 48px; color: #672f2f; margin: 0 0 10px; 
+            opacity: 0; transform: scale(0.5); 
+            text-shadow: 0 0 10px rgba(103, 47, 47, 0.3);
+        }
+        
+        #newRecordMsg { 
+            color: #ff9800; font-weight: bold; font-size: 18px; margin-bottom: 10px; 
+            display: none; text-shadow: 0 0 8px rgba(255,152,0,0.4);
+        }
+        
+        .stat-line { opacity: 0; transform: translateY(20px); transition: 0.6s ease-out; margin: 5px 0; }
+        .btn-group { margin-top: 30px; opacity: 0; display: flex; flex-direction: column; align-items: center; }
+
+        /* Animaciones para Game Over */
+        @keyframes popInBounce {
+            0% { opacity: 0; transform: scale(0.5); }
+            70% { opacity: 1; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes glowPulse {
+            0% { text-shadow: 0 0 10px rgba(103, 47, 47, 0.3); }
+            50% { text-shadow: 0 0 20px rgba(103, 47, 47, 0.6); }
+            100% { text-shadow: 0 0 10px rgba(103, 47, 47, 0.3); }
+        }
+        @keyframes bounceRecord { from { transform: scale(1); } to { transform: scale(1.1); } }
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        /* Clases para disparar animaciones */
+        #gameOver.active #goTitle { 
+            animation: popInBounce 0.6s ease-out forwards, glowPulse 2s infinite 0.6s ease-in-out; 
+        }
+        #gameOver.active #newRecordMsg { 
+            animation: bounceRecord 1s infinite alternate 1.2s ease-in-out; 
+        }
+        #gameOver.active .stat-line.animate-in { opacity: 1; transform: translateY(0); }
+        #gameOver.active .btn-group { animation: fadeIn 0.8s forwards 1.4s ease-out; }
+
+        /* Controles y botones */
+        input{ font-family: 'Times New Roman', Times, serif; padding:12px; border:1px solid #672f2f; border-radius:8px; margin-bottom:16px; width:200px; outline: none; }
+        button, .btn-style{ font-family: 'Times New Roman', Times, serif; padding:10px 25px; border:none; background:rgb(164, 101, 101); color:white; border-radius:12px; cursor:pointer; margin-bottom: 12px; font-weight: bold; transition: 0.3s; box-shadow: 0 4px 10px rgba(164,101,101,0.3); width: 220px; font-size: 16px; }
+        button:hover { background: #672f2f; transform: translateY(-2px); }
+        #btnVerRanking { background: transparent; border: 2px solid rgb(164, 101, 101); color: rgb(164, 101, 101); box-shadow: none; }
+
+        /* Panel Deslizable Ranking */
+        #slidePanel{ 
+            position:absolute; bottom:-350px; left:0; width:100%; height:200px; background:white; 
+            border-radius: 25px 25px 0 0; box-shadow:0 -10px 30px rgba(0, 0, 0, 0.08); 
+            transition: 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); overflow:auto; padding:20px; 
+            font-size:14px; z-index: 20; box-sizing: border-box; font-family: 'Times New Roman', Times, serif;
+        }
+        #slidePanel.active { bottom: 0; }
+        .handle { width: 40px; height: 5px; background: #ddd; border-radius: 10px; margin: -5px auto 15px; cursor: pointer; }
+        .ranking-item { margin-bottom: 14px; border-bottom: 1px solid #f9eaea; padding-bottom: 8px; display: flex; justify-content: space-between; font-family: 'Times New Roman', Times, serif; }
+        #zenLabel { font-weight: bold; color: #00f2ff; display: none; text-shadow: 0 0 5px rgba(0,242,255,0.5); }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div id="header">
+        <div class="player-stats">
+            <div id="playerNameDisplay">Jugador</div>
+            <div id="scoreDisplay">Puntos: 0</div>
+        </div>
+        <div id="zenLabel">MODO ZEN 🌌</div>
+        <div id="totalStrawberriesDisplay">🍓 Total: 0</div>
+    </div>  
+
+    <div id="gameArea">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="startScreen" class="overlay">
+            <h2 style="margin-top:-40px">Bienvenido</h2>
+            <input id="playerName" type="text" placeholder="Tu nombre" maxlength="10">
+            <button id="startBtn">Comenzar Aventura</button>
+        </div>
+
+        <div id="gameOver" class="overlay">
+            <h2 id="goTitle">Game Over</h2>
+            <div id="newRecordMsg">✨ ¡NUEVO RÉCORD! ✨</div>
+            
+            <p id="finalScore" class="stat-line" style="font-size: 26px; color: #333; font-weight: bold;"></p>
+            <p id="matchStrawberries" class="stat-line" style="font-size: 18px; color: #e91e63;"></p>
+            
+            <div class="btn-group" id="goButtons">
+                <button onclick="location.reload()">Jugar otra vez</button>
+                <button id="btnVerRanking" onclick="togglePanel()">Ver Ranking Completo</button>
+            </div>
+        </div>
+
+        <div id="slidePanel">
+            <div class="handle" onclick="togglePanel()"></div>
+            <b style="color:#672f2f; font-size: 16px; display: block; margin-bottom: 10px; text-align: center;">🏆 TOP 10 MEJORES</b>
+            <div id="fullRanking"></div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, where, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBWj86TmXHmfFXouDvvfK7tdmQYr7RXgPs",
+    authDomain: "gamecakes.firebaseapp.com",
+    projectId: "gamecakes",
+    storageBucket: "gamecakes.firebasestorage.app",
+    messagingSenderId: "503117171185",
+    appId: "1:503117171185:web:6e91d54c7d1aa91d3adc50"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = 360; canvas.height = 580;
+
+const collectSound = new Audio("https://cdn.pixabay.com/download/audio/2022/03/15/audio_1e7b6b7f17.mp3?filename=success-1-6297.mp3");
+const hitSound = new Audio("https://cdn.pixabay.com/download/audio/2022/03/15/audio_69b6d6b89e.mp3?filename=error-126627.mp3");
+
+let gravity = 0.8, baseSpeed = 4.5, speed = baseSpeed, score = 0, gameRunning = false, playerName = "", frameCount = 0;
+let isZenMode = false, isDead = false, zenGracePeriod = false;
+const groundHeight = 60, groundY = canvas.height - groundHeight;
+let player = { x:60, y:groundY-40, width:40, height:40, dy:0, jump:-15 };
+let strawberries = [], obstacles = [], particles = [], stars = [], shootingStars = [], floatingTexts = [];
+
+let totalStrawberries = parseInt(localStorage.getItem("totalStrawberries")) || 0;
+let levelStrawberries = 0;
+document.getElementById("totalStrawberriesDisplay").innerText = "🍓 Total: " + totalStrawberries;
+
+for(let i=0; i<70; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*(groundY-80), s: Math.random()*2, opacity: Math.random(), blink: 0.02 });
+
+const nameInput = document.getElementById("playerName");
+nameInput.addEventListener("input", () => {
+    let val = nameInput.value.replace(/[^a-zA-Z]/g, "");
+    if(val.length > 0) val = val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+    nameInput.value = val;
+});
+
+document.getElementById("startBtn").addEventListener("click", () => {
+    playerName = nameInput.value.trim();
+    if(playerName.length < 3) return alert("Nombre mínimo 3 letras");
+    document.getElementById("playerNameDisplay").innerText = playerName;
+    document.getElementById("startScreen").style.display = "none";
+    gameRunning = true; animate();
+});
+
+function jump() { if(gameRunning && !isDead && player.y >= groundY - player.height - 5) player.dy = player.jump; }
+canvas.addEventListener("touchstart", (e) => { e.preventDefault(); jump(); });
+canvas.addEventListener("mousedown", jump);
+
+function applyShake(intensity = 10, duration = 400, isDeath = false) {
+    if(isDeath) canvas.style.transform = `scale(1.1)`;
+    let interval = setInterval(() => { 
+        canvas.style.transform = (isDeath ? 'scale(1.1) ' : '') + `translate(${(Math.random()-0.5)*intensity}px, ${(Math.random()-0.5)*intensity}px)`; 
+    }, 50);
+    setTimeout(() => { clearInterval(interval); canvas.style.transform = 'translate(0,0) scale(1)'; }, duration);
+}
+
+function createParticles(x, y, color) {
+    for(let i = 0; i < 15; i++) particles.push({ x: x+15, y: y+15, dx: (Math.random()-0.5)*7, dy: (Math.random()-0.5)*7, life: 30, color: color });
+}
+
+function animate() {
+    if(!gameRunning && !isDead) return;
+    if(isDead && frameCount % 2 !== 0) { frameCount++; requestAnimationFrame(animate); return; }
+
+    frameCount++;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if(score >= 2500 && !isZenMode) {
+        isZenMode = true; zenGracePeriod = true;
+        document.getElementById("zenLabel").style.display = "block";
+        obstacles = []; 
+        floatingTexts.push({ x: canvas.width / 2, y: canvas.height / 2, text: "MODO ZEN ACTIVADO 🌌", life: 180, isZenTitle: true, opacity: 0 });
+        setTimeout(() => { zenGracePeriod = false; }, 5000);
+    }
+
+    let nightProgress = isZenMode ? 1 : Math.min(score / 3500, 1); 
+    let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, `rgb(${Math.max(10, 135 - 130*nightProgress)}, ${Math.max(10, 206 - 200*nightProgress)}, ${Math.max(20, 235 - 220*nightProgress)})`);
+    gradient.addColorStop(1, `rgb(${isZenMode ? 30 : 135 + (nightProgress*120)}, ${isZenMode ? 30 : 206 - (nightProgress*36)}, ${isZenMode ? 60 : 235 - (nightProgress*115)})`);
+    ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    stars.forEach(s => {
+        s.opacity += s.blink; if(s.opacity > 1 || s.opacity < 0) s.blink *= -1;
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, s.opacity * nightProgress)})`;
+        ctx.fillRect(s.x, s.y, s.s, s.s);
+    });
+
+    if(Math.random() < 0.01) shootingStars.push({ x: Math.random()*canvas.width, y: Math.random()*200, len: 30, opacity: 1 });
+    shootingStars.forEach((ss, i) => {
+        ss.x -= 8; ss.y += 3; ss.opacity -= 0.02;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${ss.opacity})`;
+        ctx.beginPath(); ctx.moveTo(ss.x, ss.y); ctx.lineTo(ss.x + ss.len, ss.y - 10); ctx.stroke();
+        if(ss.opacity <= 0) shootingStars.splice(i, 1);
+    });
+
+    ctx.fillStyle = isZenMode ? "#1a1a2e" : "#e7c9a9"; ctx.fillRect(0, groundY, canvas.width, groundHeight);
+    ctx.fillStyle = isZenMode ? "#16213e" : "#d2a679"; ctx.fillRect(0, groundY, canvas.width, 5);
+
+    player.dy += gravity; player.y += player.dy;
+    if(player.y > groundY - player.height) { player.y = groundY - player.height; player.dy = 0; }
+    
+    if(isZenMode && !isDead) { ctx.shadowBlur = 15; ctx.shadowColor = "#00f2ff"; }
+    ctx.font="32px serif"; ctx.fillText(isDead ? "💥" : "🎂", player.x, player.y+32);
+    ctx.shadowBlur = 0;
+
+    speed = (baseSpeed + (score / 220)) * (isZenMode ? 1.15 : 1);
+    
+    let strawberryFreq = zenGracePeriod ? 25 : 160;
+    if(frameCount % strawberryFreq === 0) {
+        let yPos = zenGracePeriod ? groundY - (40 + Math.random()*120) : groundY - 80;
+        strawberries.push({ x: canvas.width, y: yPos });
+    }
+
+    if(frameCount % 100 === 0 && !zenGracePeriod) obstacles.push({x:canvas.width, y:groundY-35});
+
+    strawberries.forEach((s, i) => {
+        s.x -= speed; ctx.font = "22px serif"; ctx.fillText("🍓", s.x, s.y + 20);
+        if(!isDead && player.x < s.x + 20 && player.x + 30 > s.x && player.y < s.y + 20 && player.y + 30 > s.y) {
+            let bonus = isZenMode ? 500 : 150;
+            score += bonus; levelStrawberries++;
+            createParticles(s.x, s.y, isZenMode ? "rgba(0, 242, 255," : "rgba(255, 50, 100,");
+            floatingTexts.push({ x: s.x, y: s.y, text: "+" + bonus, life: 45 });
+            strawberries.splice(i, 1); collectSound.currentTime = 0; collectSound.play().catch(e=>{});
+        }
+    });
+
+    obstacles.forEach((o, i) => {
+        o.x -= speed; ctx.font = "34px serif"; ctx.fillText("🚧", o.x, o.y + 30);
+        if(!isDead && player.x < o.x + 25 && player.x + 30 > o.x && player.y < o.y + 25 && player.y + 30 > o.y) {
+            isDead = true; applyShake(15, 1000, true);
+            createParticles(player.x, player.y, "rgba(180, 0, 0,");
+            hitSound.play().catch(e=>{});
+            setTimeout(endGame, 1000);
+        }
+    });
+    
+    particles.forEach((p, i) => {
+        p.x += p.dx; p.y += p.dy; p.life--;
+        ctx.fillStyle = `${p.color}${p.life / 30})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 6.28); ctx.fill();
+        if(p.life <= 0) particles.splice(i, 1);
+    });
+
+    floatingTexts.forEach((ft, i) => {
+        ft.y -= 0.8; ft.life--;
+        if(ft.isZenTitle) {
+            if(ft.life > 140) ft.opacity = Math.min(1, ft.opacity + 0.05);
+            if(ft.life < 40) ft.opacity = Math.max(0, ft.opacity - 0.03);
+            ctx.save(); ctx.textAlign = "center"; ctx.globalAlpha = ft.opacity;
+            ctx.shadowBlur = 10; ctx.shadowColor = "#00f2ff"; ctx.fillStyle = "#00f2ff";
+            ctx.font = "italic bold 22px 'Segoe UI'"; ctx.fillText(ft.text, ft.x, ft.y); ctx.restore();
+        } else {
+            ctx.fillStyle = isZenMode ? "#00f2ff" : "#672f2f";
+            ctx.font = "bold 14px Arial"; ctx.fillText(ft.text, ft.x, ft.y);
+        }
+        if(ft.life <= 0) floatingTexts.splice(i, 1);
+    });
+
+    if(!isDead) score++;
+    document.getElementById("scoreDisplay").innerText = "Puntos: " + score;
+    requestAnimationFrame(animate);
+}
+
+async function endGame() {
+    gameRunning = false;
+    totalStrawberries += levelStrawberries;
+    localStorage.setItem("totalStrawberries", totalStrawberries);
+    document.getElementById("totalStrawberriesDisplay").innerText = "🍓 Total: " + totalStrawberries;
+
+    const lastBest = parseInt(localStorage.getItem("bestScore_" + playerName)) || 0;
+    let isNewRecord = score > lastBest;
+    if(isNewRecord) localStorage.setItem("bestScore_" + playerName, score);
+
+    const go = document.getElementById("gameOver");
+    const goTitle = document.getElementById("goTitle");
+    const stats = document.querySelectorAll(".stat-line");
+    const btns = document.getElementById("goButtons");
+    const recordMsg = document.getElementById("newRecordMsg");
+
+    // Activar overlay y animaciones principales
+    go.style.display = "flex";
+    setTimeout(() => { go.classList.add('active'); }, 50);
+
+    // Animación de conteo de puntos y mostrar record Msg
+    let displayScore = 0;
+    const scoreText = document.getElementById("finalScore");
+    const matchStrawsText = document.getElementById("matchStrawberries");
+    
+    let interval = setInterval(() => {
+        displayScore += Math.ceil(score / 30);
+        if(displayScore >= score) {
+            displayScore = score;
+            clearInterval(interval);
+            // Mostrar mensaje de record después del conteo si aplica
+            if(isNewRecord) recordMsg.style.display = "block";
+        }
+        scoreText.innerText = "Puntaje: " + displayScore + " pts";
+    }, 30);
+
+    matchStrawsText.innerText = "Recolectaste: 🍓 " + levelStrawberries;
+
+    // Disparar animaciones escalonadas para líneas de texto y botones
+    setTimeout(() => { stats[0].classList.add('animate-in'); }, 800);
+    setTimeout(() => { stats[1].classList.add('animate-in'); }, 1100);
+
+    try {
+        const q = query(collection(db, "scores"), where("name", "==", playerName));
+        const snap = await getDocs(q);
+        if(snap.empty) { await addDoc(collection(db, "scores"), { name: playerName, score: score }); }
+        else if(score > snap.docs[0].data().score) { await updateDoc(snap.docs[0].ref, { score: score }); }
+    } catch(e) { console.error(e); }
+    showRanking();
+}
+
+function showRanking() {
+    const top10 = query(collection(db, "scores"), orderBy("score", "desc"), limit(10));
+    onSnapshot(top10, snapshot => {
+        let html = "";
+        snapshot.docs.forEach((doc, i) => {
+            const data = doc.data();
+            const medal = ["🥇", "🥈", "🥉"][i] || (i + 1) + ".";
+            html += `<div class="ranking-item"><span>${medal} <b>${data.name}</b></span> <span>${data.score} pts</span></div>`;
+        });
+        document.getElementById("fullRanking").innerHTML = html;
+    });
+}
+
+window.togglePanel = function() {
+    const panel = document.getElementById("slidePanel");
+    if(panel.classList.contains("active")) {
+        panel.classList.remove("active");
+    } else {
+        panel.classList.add("active");
+    }
+}
+</script>
+</body>
+</html>
